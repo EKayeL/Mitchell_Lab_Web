@@ -1,0 +1,438 @@
+---
+title: "Drug Group Cosinor ADORA1 E3 and E4 Functionalized"
+output: html_document
+date: "Your Date"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# List of packages to check and install
+packages <- c("base", "cosinor", "cosinor2", "ggplot2", "ggforce", "grid", "gridExtra",
+        "here", "magrittr", "minpack.lm", "readxl", "stats", "tidyr", "dplyr")
+
+# Function to check and install missing packages
+missing_packages <- packages[!packages %in% installed.packages()[, "Package"]]
+if (length(missing_packages) > 0) {
+  install.packages(missing_packages)
+}
+
+# Load all packages
+lapply(packages, library, character.only = TRUE)
+
+library(cosinor)
+library(ggplot2)
+library(ggforce)
+library(gridExtra)
+library(here)
+library(minpack.lm)
+library(readxl)
+library(tidyr)
+library(dplyr)
+```
+
+
+```{r}
+# Sourcing Custom-Made Functions
+source("../outlier_detection.R")
+source("../filter_outliers.R")
+source("../extract_cosinor_clock.R")
+source("../zero_amp.R")
+source("../plot_cosinor_clock.R")
+source("../create_combined_pdf.R")
+source("../export_excel.R")
+source("../export_excel_maria.R")
+```
+
+
+### Reading, Converting, Analyzing and Plotting ADORA1 E3 and E4 
+### Administered Rats 
+#### Reading in ADORA1 E3 and E4 Administered Rat Data for 
+#### E3 and rLEN
+```{r}
+# Reading  ADORA1 Administered Rats
+readxl::read_excel(path ="../Copy of analysis_SCN.xlsx",
+                   sheet = "ADORA1",
+                    range ="A1:M40") ->  Circadian_ADORA1
+
+ Circadian_ADORA1 %>%
+  select(`Animal ID`,`Time point`, `Group`, `Normalized fold change`) %>%
+  rename("ID" = `Animal ID`, "Time" = `Time point`,
+        "Change" = `Normalized fold change`)->  Circadian_ADORA1
+
+
+# Check if 'Normalized fold change' is character and needs parsing
+if (is.character( Circadian_ADORA1$Change)) {
+   Circadian_ADORA1 <-  Circadian_ADORA1 %>%
+    mutate(Change = parse_number(Change))
+}
+
+# Separating E3 data and pivoting
+ Circadian_ADORA1_E3 <-  Circadian_ADORA1 %>%
+  filter(grepl("E3", Group)) %>%
+  mutate(
+    Time = recode(Time,
+    "ZT0" = "0", "ZT6" = "6", "ZT12" = "12", "ZT18" = "18", "ZT24" = "24")
+  ) %>%
+  pivot_wider(
+    id_cols = ID,
+    names_from = Time,
+    values_from = Change) %>%
+  select(-c(ID))
+if (!"24" %in% colnames( Circadian_ADORA1_E3)) {
+   E3_Circadian_ADORA1_Filter <-  Circadian_ADORA1_E3 %>%
+    mutate(`24` = `0`)}
+
+# Separating E4 data and pivoting    
+ Circadian_ADORA1_E4 <-  Circadian_ADORA1 %>%
+  filter(grepl("E4", Group)) %>%
+  mutate(
+    Time = recode(Time,
+    "ZT0" = "0", "ZT6" = "6", "ZT12" = "12", "ZT18" = "18", "ZT24" = "24")
+  ) %>%
+  pivot_wider(
+    id_cols = ID,
+    names_from = Time,
+    values_from = Change)%>%
+  select(-c(ID))
+if (!"24" %in% colnames( Circadian_ADORA1_E4)) {
+   E4_Circadian_ADORA1_Filter <-  Circadian_ADORA1_E4 %>%
+    mutate(`24` = `0`)}
+```
+
+
+#### Converting Data into Usable Format for Extracting VOIs and Plotting
+```{r}
+# Data Conversion to get Individual Points for ADORA1 E3
+# Rat Model
+## X value is Zeitgeber time,  Y value is # of Fold Changes
+
+# Loads Initial Dataset for E3 ADORA1 E3 and E4 Rats and 
+# Removes Outliers
+#outlier_detection(Circadian_ADORA1_E3) -> out_res_E3ADORA1
+#filter_outliers(Circadian_ADORA1_E3, 
+#                out_res_E3ADORA1) ->  E3_Circadian_ADORA1_Filter
+
+# Performs Data Carpentry on Filtered E3 ADORA1 Dataset and Removes 'NA's,
+## filters out ZT of 24
+E3_Circadian_ADORA1_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Fold_Changes") %>%
+  drop_na(`Fold_Changes`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> E3_Circadian_ADORA1_Filter
+E3_Circadian_ADORA1_Filter %>%
+  # Filter out ZT of 24
+  filter(ZT != 24)  -> E3_Circadian_ADORA1_data
+
+# Creating Cosinor Model for E3 ADORA1 Rat Plots
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = E3_Circadian_ADORA1_Filter) -> cosMod_E3_ADORA1
+# Creating Cosinor Model for E3 ADORA1 Rat Data Analysis
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = E3_Circadian_ADORA1_data) -> cosMod_E3_ADORA1_data
+```
+
+```{r}
+# Data Conversion to get Individual Points for ADORA1 E4 
+# Rat Model X value is Zeitgeber time,  Y value is # of Fold Changes
+
+# Loads Initial Dataset for E4 ADORA1 E3 and E4 Rats and Removes Outliers
+# outlier_detection(Circadian_ADORA1_E4) -> out_res_E4ADORA1
+# filter_outliers(Circadian_ADORA1_E4, 
+#                out_res_E4ADORA1) ->  E4_Circadian_ADORA1_Filter
+
+# Performs Data Carpentry on Filtered E3 ADORA1 Dataset and Removes 'NA's
+E4_Circadian_ADORA1_Filter %>%
+  pivot_longer(cols = c(`0`,`6`,`12`, `18`, `24`), names_to = "ZT", 
+               values_to = "Fold_Changes") %>%
+  drop_na(`Fold_Changes`) %>%
+  mutate(ZT = as.numeric(ZT)) %>%
+  arrange(ZT) -> E4_Circadian_ADORA1_Filter
+E4_Circadian_ADORA1_Filter %>%
+  # Filter out ZT of 24
+  filter(ZT != 24)  -> E4_Circadian_ADORA1_data
+
+# Creating Cosinor Model for E3 ADORA1 Rat Plots
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = E4_Circadian_ADORA1_Filter) -> cosMod_E4_ADORA1
+# Creating Cosinor Model for E3 ADORA1 Rat Plot Data Analysis
+cosinor.lm(`Fold_Changes` ~ time(ZT), period = 24,
+           data = E4_Circadian_ADORA1_data) -> cosMod_E4_ADORA1_data
+```
+
+
+#### Calculating the Y-limits for Plots of Cosinor Fit
+```{r}
+# Finding the max Y-value Across Both Datsets in Order to Set Y-limits of 
+# Future Plot
+max(E4_Circadian_ADORA1_Filter$`Fold_Changes`, 
+    E3_Circadian_ADORA1_Filter$`Fold_Changes`) -> ADORA1_max
+# Calculate y_peak based on ADORA1_max
+if (ADORA1_max < 3) {
+  y_peak <- ceiling(ADORA1_max / 0.25) * 0.25 
+  } else {
+  y_peak <- ceiling(ADORA1_max / 5) * 5}
+```
+
+
+#### Creating Plots of Original Data with Cosinor Fit Overlayed for Rat Models
+```{r}
+# Creating Individual Plots of Rat Datasets w/ Cosinor Fits
+## Loads Function plot_cosinor_clock Into Global Environment, Which Takes cosMod 
+## Model, Original Dataset, Plot Title and Desired x-breaks (currently set for
+## Zetigeber Time, to see how to change to regular time see function notes) and
+## Generates Plot of Original Data with Overlayed Cosinor Fit Model
+
+# Creating Plot for E3 ADORA1 Rat Model
+plot_cosinor_clock(cosMod_E3_ADORA1, E3_Circadian_ADORA1_Filter, 
+             "ADORA1 E3", "E3",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_E3_ADORA1
+
+
+# Creating Plot for E4 ADORA1 Rat Model
+plot_cosinor_clock(cosMod_E4_ADORA1, E4_Circadian_ADORA1_Filter, 
+             "ADORA1 E4", "E4",
+             x_breaks = seq(0, 24, by = 6)) -> mod_plot_E4_ADORA1
+```
+
+
+#### Performing Cosinor Analysis for Rat Datasets
+```{r}
+# Creating Table of Data VOIs for E3 ADORA1 E3 and E4 Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor_clock(cosMod_E3_ADORA1_data, E3_Circadian_ADORA1_data,
+                "E3") -> E3_extract_output
+E3_ADORA1_Results_table <- E3_extract_output$results_table
+E3_ADORA1_Results_grob <- E3_extract_output$results_grob
+
+
+# Creating Table of Data VOIs for E4 ADORA1 E3 and E4 Rat Model
+## Produces Table of Pertinent Values (Mesor, Amplitude, Acrophase, Bathyphase)
+## and Converts Table into Graphical Object for Figure Creation
+extract_cosinor_clock(cosMod_E4_ADORA1_data, E4_Circadian_ADORA1_data,
+                "E4") -> E4_extract_output
+E4_ADORA1_Results_table <- E4_extract_output$results_table
+E4_ADORA1_Results_grob <- E4_extract_output$results_grob
+```
+
+
+#### Performing Zero Amplitude Test Analysis on Rat Models
+```{r}
+# Zero-Amplitude Analysis of Cosinor Fit
+## Creating Table of Zero Amplitude VOIs for E3 ADORA1 E3 and E4 Rat Model
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_E3_ADORA1_data, "E3") -> E3_zero_output
+E3_ADORA1_amp_test_Results <- E3_zero_output$results_table
+E3_ADORA1_amp_test_grob <- E3_zero_output$results_grob
+
+
+
+# Produces Table of Pertinent Values (df1, df2, f-value, p-value) and Converts 
+# Table into Graphical Object for Figure Creation
+zero_amp(cosMod_E4_ADORA1_data, "E4") -> E4_zero_output
+E4_ADORA1_amp_test_Results <- E4_zero_output$results_table
+E4_ADORA1_amp_test_grob <- E4_zero_output$results_grob
+```
+
+
+#### Creating Side-by-Side Plot Comparison of Cosinor Fit Models for E3 and 
+#### E4 Rat Models
+```{r, fig.width= 15}
+# Set the working directory to the folder where you want to save the plot
+plot_dir <- here("Combined Plots")
+# Create the directory if it does not exist
+if (!dir.exists(plot_dir)) dir.create(plot_dir)  
+
+# Save the plot as PDF in the specified directory
+pdf(file.path(plot_dir, "combined_ADORA1_plots.pdf"), width=15, height=6)
+grid.arrange(mod_plot_E3_ADORA1, mod_plot_E4_ADORA1, ncol = 2)
+dev.off()
+```
+
+
+#### Creating Side-by-Side Table Comparisons of Cosinor Analysis and Zero
+#### Amplitude Analysis VOIs
+```{r}
+# Set the working directory to the folder where you want to save the tables
+table_dir <- here("Combined Tables")
+# Create the directory if it does not exist
+if (!dir.exists(table_dir)) dir.create(table_dir)  
+
+headers <- c("Cosinor Parameters", "Zero Amp Parameters")
+tables <- list(E3_ADORA1_Results_grob, E3_ADORA1_amp_test_grob, 
+               E4_ADORA1_Results_grob, E4_ADORA1_amp_test_grob, NULL, NULL)
+title_text <- "Comparison of ADORA1 E3 and E4 Circadian Disruption Values"
+output_file <- file.path(table_dir, "combined_ADORA1_tables.pdf")
+fig_width <- 7.5
+fig_height <- 10
+create_combined_pdf(headers, tables, title_text, output_file, fig_width, fig_height)
+```
+
+
+#### Exporting all Created Table Figures to Excel for Ease of
+#### Data Copying/Compiling
+```{r}
+# Creating File Marker for Table Figure Identification in Function Code
+file_abbrev <- "ADORA1"
+# Exporting Table Statistics to Excel Sheets
+export_excel_maria(file_abbrev)
+```
+
+
+#### Generation of Pseudo-Rayleigh Plots
+```{r}
+#### Creating a Combined Pseudo-Rayleigh Plot for Group Rhythm Visualization
+# --- Data Extraction ---
+# Extract E3 ADORA1 (ADORA1) data
+E3_ADORA1_acrophase <- E3_ADORA1_Results_table$Values[E3_ADORA1_Results_table$Parameter == "E3 Acrophase (Hrs)"]
+E3_ADORA1_amplitude <- E3_ADORA1_Results_table$Values[E3_ADORA1_Results_table$Parameter == "E3 Amplitude"]
+
+# Extract E4 ADORA1 (ADORA1) data
+E4_ADORA1_acrophase <- E4_ADORA1_Results_table$Values[E4_ADORA1_Results_table$Parameter == "E4 Acrophase (Hrs)"]
+E4_ADORA1_amplitude <- E4_ADORA1_Results_table$Values[E4_ADORA1_Results_table$Parameter == "E4 Amplitude"]
+
+# --- Data Preparation for Combined Plot ---
+# Create data frames for each condition
+E3_ADORA1_vector_data <- data.frame(
+  Condition = "E3",
+  acrophase = E3_ADORA1_acrophase,
+  amplitude = E3_ADORA1_amplitude
+)
+
+E4_ADORA1_vector_data <- data.frame(
+  Condition = "E4",
+  acrophase = E4_ADORA1_acrophase,
+  amplitude = E4_ADORA1_amplitude
+)
+
+# Combine the two data frames into a single one
+combined_ADORA1_vector_data <- rbind(E3_ADORA1_vector_data, E4_ADORA1_vector_data) %>%
+  arrange(desc(amplitude))
+
+
+# --- 1. Create the Main Plot ---
+max_amplitude <- max(combined_ADORA1_vector_data$amplitude, na.rm = TRUE)
+
+# maximum radius
+r_max <- max_amplitude * 1.5  
+# Ring radii (we’ll force these as the y breaks so legend + rings match)
+ring_r <- pretty(c(0, r_max), n = 4)
+ring_r <- ring_r[ring_r >= 0]
+zt_breaks <- seq(0, 22, by = 2)  # match your x breaks
+ring_r <- ring_r[ring_r <= r_max] # prevents the geom_hline warning
+
+# Function to generate wedge polygons for polar coordinates
+make_wedge <- function(start, end, r, n_points = 200) {
+  # Generate angles (in hours) for the arc, including start and end
+  theta <- seq(start, end, length.out = n_points + 2)  # +2 to include start and end explicitly
+  # Radius values from 0 to r_max, repeated for the arc, and back to 0
+  r_vals <- c(0, rep(r, n_points), 0)
+  # Create data frame for the closed polygon
+  data.frame(
+    x = theta[c(1, 1:n_points, n_points + 2)],  # Start, arc points, end
+    y = r_vals  # From 0 to r_max and back to 0
+  )
+}
+
+day_poly   <- make_wedge(0, 12, r_max)
+night_poly <- make_wedge(12, 24, r_max)
+
+main_plot_with_legend <- ggplot(combined_ADORA1_vector_data, aes(color = Condition)) +
+  # Draw the day and night background ribbons
+  geom_polygon(data = day_poly, aes(x = x, y = y),
+               inherit.aes = FALSE, fill = "#FFFACD", alpha = 0.9) +
+  geom_polygon(data = night_poly, aes(x = x, y = y),
+               inherit.aes = FALSE, fill = "#E6E6FA", alpha = 0.9) +
+ # ZT spokes ON TOP of ribbons
+geom_vline(xintercept = zt_breaks,
+           inherit.aes = FALSE,
+           color = "grey85", linewidth = 0.6) +
+   # ---- Rings ON TOP of ribbons (but still under arrows/icons) ----
+geom_hline(yintercept = ring_r[ring_r > 0],
+           color = "grey85", linewidth = 0.6) +
+  # Arrows are drawn based on their order in the arranged data frame
+  geom_segment(
+    aes(x = acrophase, y = 0, xend = acrophase, yend = amplitude),
+    arrow = arrow(length = unit(0.3, "cm")),
+    linewidth = 1.5
+  ) +
+  # Add the sun and moon symbols as annotations
+  annotate("text", x = 6, y = max_amplitude * 1.4, label = "\u2600", size = 8) +
+  annotate("text", x = 18, y = max_amplitude * 1.4, label = "\U0001F319", size = 8) +
+  coord_polar(theta = "x", start = 0) +
+  scale_x_continuous(limits = c(0, 24), breaks = seq(0,22, by = 2)) +
+  scale_y_continuous(limits = c(0, r_max), breaks = ring_r) +
+  scale_color_manual(values = c("E3" = "black", "E4" = "red")) +
+  labs(
+    title = "ADORA1 Gene Group Acrophase Comparison (E3 vs. E4)",
+    x = "Zeitgeber Time (ZT)", y = "Amplitude", color = "Condition"
+  ) +
+  theme_void() + # Start with a completely blank theme
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(color = "black"),      
+    axis.title = element_text(color = "black"),
+    axis.title.y = element_text(angle = 90, vjust = 0.5),
+    # Keep spokes if you like, but remove theme-based rings
+panel.grid.major.x = element_line(color = "grey85"),
+panel.grid.major.y = element_blank(),
+panel.grid.minor   = element_blank(),
+    legend.position = "right"
+  )
+
+# --- 2. Create the separate amplitude legend plot ---
+
+# Build the main plot to extract the actual y-axis (radial) breaks
+plot_build_data <- ggplot_build(main_plot_with_legend)
+radial_breaks <- plot_build_data$layout$panel_params[[1]]$r.major
+
+# Filter out the break at 0, as we don't need a ring for it
+legend_rings <- data.frame(r = radial_breaks[radial_breaks > 0])
+
+# Determine the maximum radius for setting the y-limit of the legend plot
+legend_max_val <- if (length(legend_rings$r) > 0) max(legend_rings$r) else 0
+
+amplitude_legend_plot <- ggplot() +
+  # Draw circles for each break value found in the main plot
+  geom_circle(data = legend_rings, aes(x0 = 0, y0 = 0, r = r), color = "grey50")+
+  # Add text labels for each circle
+  geom_text(data = legend_rings, aes(x = 0, y = r, label = r), vjust = -0.5, size = 3) +
+  theme_void() + 
+  coord_fixed() +
+  # Set ylim to ensure the largest ring and its text aren't cut off
+  ylim(-legend_max_val, legend_max_val * 1.2)
+
+
+# --- 3. Prepare the components for the final layout ---
+
+main_plot_only <- main_plot_with_legend + theme(legend.position = "none")
+condition_legend <- cowplot::get_legend(main_plot_with_legend)
+
+# --- 4. Arrange the final figure in a three-column layout ---
+final_plot <- grid.arrange(
+  amplitude_legend_plot,
+  main_plot_only,
+  condition_legend,
+  ncol = 3,
+  widths = c(1.5, 5, 1.5)
+)
+
+# Set the working directory to the folder where you want to save PDFs
+# Use ggsave() to save the plot as a high-quality PDF
+rayleigh_dir <- here("Rayleigh Plots")
+# Create the directory if it does not exist
+if (!dir.exists(rayleigh_dir)) dir.create(rayleigh_dir)  
+ggsave(
+  filename = file.path(rayleigh_dir, "ADORA1 E3 and E4_Plot.pdf"),  
+  plot = final_plot,
+  width = 8,   # Width in inches
+  height = 5,  # Height in inches
+  device = cairo_pdf,
+  # Add this line to specify the font
+  family = "Segoe UI Symbol" 
+)
+```
