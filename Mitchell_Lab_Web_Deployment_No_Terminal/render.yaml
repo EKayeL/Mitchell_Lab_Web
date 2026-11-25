@@ -1,0 +1,14 @@
+# Mitchell Lab web portal: COSINOR is disabled.
+# Render Dashboard > New > Blueprint; connect this GitHub repo.
+services:
+  - type: web
+    name: mitchell-lab-analysis
+    runtime: docker
+    plan: free
+    autoDeployTrigger: off
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: APP_REQUIRE_PASSWORD
+        value: "1"
+      - key: APP_PASSWORD
+        sync: false
